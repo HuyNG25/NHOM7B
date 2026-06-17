@@ -1,0 +1,558 @@
+openapi: 3.1.0
+info:
+  title: Smart Campus — Notification Service API Contract (B7)
+  version: 2.0.0
+  description: |
+    Hợp đồng API (OpenAPI 3.1) cho Dịch vụ cảnh báo đa kênh (Nhóm B7).
+
+    **Vai trò trong hệ thống:**
+    - **Consumer**: Nhận event `core.alert.created` từ Core Business (B6) qua endpoint `POST /notifications/events`.
+    - **Producer**: Gửi cảnh báo trở lại Core Business (B6) qua endpoint `POST /alerts` của B6 sau khi xử lý nội bộ.
+    - **Provider**: Cung cấp log lịch sử gửi tin cho Analytics / Dashboard.
+
+    **Luồng tích hợp với B6:**
+    1. B6 gọi `POST /notifications/events` để bắn event `core.alert.created`.
+    2. B7 nhận, phân phối thông báo đa kênh (Telegram, Discord, Email…).
+    3. B7 gọi ngược `POST <B6_BASE_URL>/alerts` để xác nhận / phản hồi kết quả xử lý về phía B6.
+  contact:
+    name: FIT4110 Teaching Team - Nhóm B7
+    email: group7.notification@example.edu.vn
+
+servers:
+  - url: http://localhost:8085
+    description: Notification Service (B7) — chạy thực tế
+  - url: http://localhost:4070
+    description: Prism mock server cho Nhóm B7
+  - url: https://api.notification.campus.local
+    description: Class network placeholder
+
+tags:
+  - name: health
+    description: Kiểm tra trạng thái service
+  - name: events
+    description: Nhận event từ Core Business (B6)
+  - name: notifications
+    description: Log lịch sử gửi thông báo đa kênh
+
+security:
+  - bearerAuth: []
+
+paths:
+  /health:
+    get:
+      operationId: getHealth
+      summary: Kiểm tra trạng thái service Notification
+      description: Endpoint kiểm tra trạng thái hoạt động của service, dành cho API Gateway hoặc hệ thống chung.
+      tags: [health]
+      security: []
+      responses:
+        '200':
+          description: Service đang hoạt động ổn định
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthStatus'
+              examples:
+                ok:
+                  value:
+                    status: ok
+                    service: notification-service
+                    time: '2026-05-10T08:00:00Z'
+
+  /notifications/events:
+    post:
+      operationId: receiveAlertEvent
+      summary: Nhận event cảnh báo từ Core Business (B6)
+      description: |
+        **Consumer endpoint** — B6 POST event `core.alert.created` vào đây.
+
+        Payload tuân thủ đúng cấu trúc event contract đã thống nhất giữa B6 và B7
+        (tài liệu `event-B6-B7-Notification`).
+
+        Sau khi nhận event, B7 sẽ:
+        1. Chống trùng lặp bằng `eventId` (Idempotency-Key tùy chọn).
+        2. Phân phối thông báo qua các kênh được cấu hình (Telegram, Discord, Email…).
+        3. Gọi ngược `POST /alerts` của B6 để xác nhận kết quả xử lý.
+      tags: [events]
+      parameters:
+        - name: Idempotency-Key
+          in: header
+          required: false
+          description: Khóa chống gửi trùng thông báo. Nếu trùng khóa, trả về kết quả đã xử lý trước đó.
+          schema:
+            type: string
+            maxLength: 100
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AlertEventPayload'
+            examples:
+              unauthorizedAccess:
+                value:
+                  eventId: "0196fb3d-4ad7-7d1e-9f49-5d5148d2babc"
+                  eventType: "core.alert.created"
+                  occurredAt: "2026-05-26T08:30:00Z"
+                  correlationId: "0196fb3d-4ad7-7d1e-9f49-5d5148d2aaaa"
+                  source: "core-business"
+                  data:
+                    alertId: "0196fb3d-4ad7-7d1e-9f49-5d5148d2babc"
+                    severity: "HIGH"
+                    message: "Phát hiện sinh viên quẹt thẻ khóa"
+                    targetUserId: "SV-12345"
+      responses:
+        '202':
+          description: Event đã được tiếp nhận và đưa vào hàng đợi xử lý
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EventAcceptedResponse'
+              examples:
+                accepted:
+                  value:
+                    accepted: true
+                    eventId: "0196fb3d-4ad7-7d1e-9f49-5d5148d2babc"
+                    ticket_id: "0196fb3e-5ba2-7e2f-8a11-6d7249e3cade"
+                    channels_dispatched: ["telegram", "discord"]
+                    status: "delivered"
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '409':
+          description: Event đã được xử lý trước đó (trùng eventId trong TTL window)
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '422':
+          $ref: '#/components/responses/UnprocessableEntity'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /notifications/trigger:
+    post:
+      operationId: receiveTriggerAlertPostman
+      summary: Tiếp nhận alert với payload đơn giản
+      description: |
+        **Trigger endpoint** — Tiếp nhận alert từ Postman hoặc hệ thống kiểm thử với cấu trúc payload đơn giản.
+      tags: [events]
+      parameters:
+        - name: Idempotency-Key
+          in: header
+          required: false
+          description: Khóa chống gửi trùng thông báo.
+          schema:
+            type: string
+            maxLength: 100
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AlertTriggerPayload'
+            examples:
+              gateSecurity:
+                value:
+                  alert_id: "0196fb3d-4ad7-7d1e-9f49-5d5148d2babc"
+                  severity: "HIGH"
+                  message: "Phát hiện truy cập trái phép tại cổng chính"
+                  target: "security_team"
+                  channels: ["sms"]
+      responses:
+        '202':
+          description: Alert đã được tiếp nhận và xử lý
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TriggerAcceptedResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '409':
+          description: Alert đã được xử lý trước đó
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /api/v1/alerts:
+    post:
+      operationId: receiveTriggerAlertLegacy
+      summary: Tiếp nhận alert với payload đơn giản (Endpoint cũ)
+      description: |
+        Endpoint tương tự /notifications/trigger nhưng sử dụng định tuyến legacy /api/v1/alerts.
+      tags: [events]
+      parameters:
+        - name: Idempotency-Key
+          in: header
+          required: false
+          schema:
+            type: string
+            maxLength: 100
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AlertTriggerPayload'
+      responses:
+        '202':
+          description: Alert đã được tiếp nhận và xử lý
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TriggerAcceptedResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '409':
+          description: Alert đã được xử lý trước đó
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /notifications/logs:
+    get:
+      operationId: listNotificationLogs
+      summary: Lấy log trạng thái gửi cảnh báo
+      description: |
+        Cung cấp API cho hệ thống Analytics hoặc Dashboard tra cứu lịch sử và trạng thái gửi tin.
+        Hỗ trợ lọc theo `event_id` và `channel`.
+      tags: [notifications]
+      parameters:
+        - name: event_id
+          in: query
+          required: false
+          description: Lọc theo eventId của event từ B6.
+          schema:
+            type: string
+            format: uuid
+        - name: channel
+          in: query
+          required: false
+          description: Lọc theo kênh gửi tin.
+          schema:
+            type: string
+            enum: [telegram, email, discord, zalo, sms]
+        - name: limit
+          in: query
+          required: false
+          description: Số bản ghi tối đa trả về.
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+      responses:
+        '200':
+          description: Danh sách log gửi thông báo
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/NotificationLogItem'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  schemas:
+    HealthStatus:
+      type: object
+      additionalProperties: false
+      required: [status, service, time]
+      properties:
+        status:
+          type: string
+          enum: [ok]
+          example: ok
+        service:
+          type: string
+          minLength: 2
+          maxLength: 80
+          example: notification-service
+        time:
+          type: string
+          format: date-time
+          example: '2026-05-10T08:00:00Z'
+
+    AlertEventPayload:
+      type: object
+      additionalProperties: false
+      required: [eventId, eventType, occurredAt, source, data]
+      description: |
+        Payload event `core.alert.created` từ Core Business (B6).
+        Tuân thủ event contract đã thống nhất trong tài liệu event-B6-B7-Notification.
+      properties:
+        eventId:
+          type: string
+          format: uuid
+          description: UUID của event — B7 dùng để chống gửi SMS/Telegram trùng lặp.
+          example: "0196fb3d-4ad7-7d1e-9f49-5d5148d2babc"
+        eventType:
+          type: string
+          const: "core.alert.created"
+          description: Loại event — phải là `core.alert.created`.
+          example: "core.alert.created"
+        occurredAt:
+          type: string
+          format: date-time
+          description: Thời điểm event xảy ra phía B6.
+          example: "2026-05-26T08:30:00Z"
+        correlationId:
+          type: [string, 'null']
+          format: uuid
+          description: ID để trace log toàn hệ thống (tùy chọn).
+          example: "0196fb3d-4ad7-7d1e-9f49-5d5148d2aaaa"
+        source:
+          type: string
+          minLength: 2
+          maxLength: 80
+          pattern: '^[a-z0-9-]+$'
+          description: Service nguồn phát event.
+          example: "core-business"
+        data:
+          $ref: '#/components/schemas/AlertEventData'
+
+    AlertEventData:
+      type: object
+      additionalProperties: false
+      required: [alertId, severity, message]
+      description: Dữ liệu chi tiết của cảnh báo từ B6.
+      properties:
+        alertId:
+          type: string
+          format: uuid
+          description: UUID của alert phía B6.
+          example: "0196fb3d-4ad7-7d1e-9f49-5d5148d2babc"
+        severity:
+          $ref: '#/components/schemas/AlertSeverity'
+        message:
+          type: string
+          minLength: 5
+          maxLength: 500
+          description: Nội dung cảnh báo.
+          example: "Phát hiện sinh viên quẹt thẻ khóa"
+        targetUserId:
+          type: [string, 'null']
+          description: ID sinh viên / người dùng liên quan (nếu có).
+          example: "SV-12345"
+        channels:
+          type: array
+          description: Danh sách kênh B6 yêu cầu B7 gửi (tùy chọn — nếu không có B7 tự chọn kênh).
+          items:
+            type: string
+            enum: [telegram, email, discord, zalo, sms]
+          example: ["telegram", "email"]
+
+    AlertSeverity:
+      type: string
+      enum: [LOW, MEDIUM, HIGH, CRITICAL]
+      description: Mức độ nghiêm trọng của cảnh báo.
+      example: HIGH
+
+    EventAcceptedResponse:
+      type: object
+      additionalProperties: false
+      required: [accepted, eventId, ticket_id, channels_dispatched, status]
+      properties:
+        accepted:
+          type: boolean
+          description: B7 đã tiếp nhận và xử lý event thành công.
+          example: true
+        eventId:
+          type: string
+          format: uuid
+          description: eventId phản chiếu lại để B6 đối chiếu.
+          example: "0196fb3d-4ad7-7d1e-9f49-5d5148d2babc"
+        ticket_id:
+          type: string
+          format: uuid
+          description: Mã biên nhận nội bộ của B7 để tra cứu log.
+          example: "0196fb3e-5ba2-7e2f-8a11-6d7249e3cade"
+        channels_dispatched:
+          type: array
+          description: Danh sách kênh đã được kích hoạt gửi thông báo.
+          items:
+            type: string
+            enum: [telegram, email, discord, zalo, sms]
+          example: ["telegram", "discord"]
+        status:
+          type: string
+          enum: [delivered, partial, failed, pending]
+          description: Trạng thái tổng hợp của lượt phân phối.
+          example: delivered
+        b6_callback_status:
+          type: [string, 'null']
+          description: Trạng thái gọi ngược về B6 (POST /alerts). null nếu chưa gọi hoặc không cấu hình.
+          example: "success"
+
+    NotificationLogItem:
+      type: object
+      additionalProperties: false
+      required: [ticket_id, event_id, alert_id, channel, status, retry_count, timestamp]
+      properties:
+        ticket_id:
+          type: string
+          format: uuid
+          description: Mã biên nhận nội bộ.
+        event_id:
+          type: string
+          format: uuid
+          description: eventId từ B6.
+        alert_id:
+          type: string
+          format: uuid
+          description: alertId của B6.
+        channel:
+          type: string
+          enum: [telegram, email, discord, zalo, sms]
+        status:
+          type: string
+          enum: [delivered, pending, failed, retrying]
+        retry_count:
+          type: integer
+          minimum: 0
+          description: Số lần thử lại.
+          example: 1
+        error_message:
+          type: [string, 'null']
+          description: Ghi chú lỗi kỹ thuật nếu thất bại.
+          example: "Telegram Bot API: 403 Forbidden"
+        timestamp:
+          type: string
+          format: date-time
+          description: Thời điểm ghi log.
+        severity:
+          type: [string, 'null']
+          description: Mức độ nghiêm trọng (để Dashboard hiển thị màu sắc).
+          example: HIGH
+        message:
+          type: [string, 'null']
+          description: Nội dung cảnh báo gốc từ B6.
+
+    AlertTriggerPayload:
+      type: object
+      additionalProperties: false
+      required: [alert_id, severity, message, target]
+      properties:
+        alert_id:
+          type: string
+          description: Định danh hoặc UUID của alert truyền từ Core Business.
+          example: "0196fb3d-4ad7-7d1e-9f49-5d5148d2babc"
+        severity:
+          type: string
+          enum: [LOW, MEDIUM, HIGH, CRITICAL]
+          example: HIGH
+        message:
+          type: string
+          minLength: 5
+          maxLength: 500
+          description: Nội dung cảnh báo.
+          example: "Phát hiện truy cập trái phép tại cổng chính"
+        target:
+          type: string
+          description: Nhóm chức năng tiếp nhận.
+          example: "security_team"
+        channels:
+          type: array
+          items:
+            type: string
+            enum: [telegram, email, discord, zalo, sms]
+          example: ["sms"]
+
+    TriggerAcceptedResponse:
+      type: object
+      additionalProperties: false
+      required: [sent, channel, status, ticket_id]
+      properties:
+        sent:
+          type: boolean
+          example: true
+        channel:
+          type: string
+          example: telegram
+        status:
+          type: string
+          enum: [delivered, partial, failed, pending]
+          example: delivered
+        ticket_id:
+          type: string
+          format: uuid
+          example: "0196fb3e-5ba2-7e2f-8a11-6d7249e3cade"
+
+    Problem:
+      type: object
+      additionalProperties: false
+      required: [type, title, status]
+      properties:
+        type:
+          type: string
+          format: uri
+          example: https://campus.local/errors/validation
+        title:
+          type: string
+          example: Dữ liệu không hợp lệ
+        status:
+          type: integer
+          example: 400
+        detail:
+          type: [string, 'null']
+          example: Trường eventId không hợp lệ hoặc bị trống
+        instance:
+          type: [string, 'null']
+          example: /notifications/events
+
+  responses:
+    BadRequest:
+      description: Dữ liệu payload sai định dạng JSON Schema
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+          example:
+            type: https://campus.local/errors/validation
+            title: Dữ liệu không hợp lệ
+            status: 400
+            detail: Payload không đúng JSON Schema
+            instance: /notifications/events
+    Unauthorized:
+      description: Sai hoặc thiếu thông tin định danh Bearer Token
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+    UnprocessableEntity:
+      description: Dữ liệu hợp lệ về cấu trúc nhưng sai logic nghiệp vụ
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+    InternalServerError:
+      description: Lỗi máy chủ không mong muốn
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'

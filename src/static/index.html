@@ -1,0 +1,310 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Notification Service Dashboard</title>
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <!-- FontAwesome for Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Custom CSS -->
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <div class="bg-glow"></div>
+    <div class="bg-glow-2"></div>
+
+    <header class="navbar">
+        <div class="nav-container">
+            <div class="logo">
+                <i class="fa-solid fa-bell-ring logo-icon text-glow"></i>
+                <span class="logo-text">Notify<span class="accent-text">Service</span></span>
+            </div>
+            <div class="system-status">
+                <span class="status-indicator online"></span>
+                <span class="status-label">Service Online</span>
+            </div>
+        </div>
+    </header>
+
+    <main class="dashboard-container">
+        <!-- Dashboard Overview Metrics -->
+        <section class="metrics-grid">
+            <div class="metric-card glass">
+                <div class="metric-icon bg-blue-glow"><i class="fa-solid fa-triangle-exclamation"></i></div>
+                <div class="metric-content">
+                    <h3>Tổng Cảnh Báo</h3>
+                    <div class="metric-value" id="metric-total">0</div>
+                    <p class="metric-sub">Đã xử lý từ Core Business</p>
+                </div>
+            </div>
+            <div class="metric-card glass">
+                <div class="metric-icon bg-green-glow"><i class="fa-solid fa-circle-check"></i></div>
+                <div class="metric-content">
+                    <h3>Gửi Thành Công</h3>
+                    <div class="metric-value" id="metric-success">0</div>
+                    <p class="metric-sub" id="metric-success-rate">Tỷ lệ: 0%</p>
+                </div>
+            </div>
+            <div class="metric-card glass">
+                <div class="metric-icon bg-purple-glow"><i class="fa-solid fa-clone"></i></div>
+                <div class="metric-content">
+                    <h3>Ngăn Trùng Lặp</h3>
+                    <div class="metric-value" id="metric-dedup">0</div>
+                    <p class="metric-sub">Deduplicated (Tránh Spam)</p>
+                </div>
+            </div>
+            <div class="metric-card glass">
+                <div class="metric-icon bg-amber-glow"><i class="fa-solid fa-arrow-rotate-right"></i></div>
+                <div class="metric-content">
+                    <h3>Yêu Cầu Retry</h3>
+                    <div class="metric-value" id="metric-retry">0</div>
+                    <p class="metric-sub">Số lượt tự động gửi lại</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- Main Dashboard Split Layout -->
+        <div class="dashboard-split">
+            <!-- Left Panel: Trigger Alert & Configurations -->
+            <div class="panel-left">
+                <!-- Tab Headers -->
+                <div class="tabs-header glass">
+                    <button class="tab-btn active" data-tab="tab-trigger">
+                        <i class="fa-solid fa-satellite-dish"></i> Tín Hiệu từ B6 (Inbound)
+                    </button>
+                    <button class="tab-btn" data-tab="tab-config">
+                        <i class="fa-solid fa-sliders"></i> Cấu Hình Kênh (Channels)
+                    </button>
+                </div>
+
+                <!-- Tab Content: Trigger Alert (Inbound Signals) -->
+                <div id="tab-trigger" class="tab-content active glass">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
+                        <h2 class="panel-title" style="margin-bottom: 0;">Tín hiệu nhận từ Core Business (B6)</h2>
+                        <span class="endpoint-badge" style="background: rgba(9, 132, 227, 0.2); border: 1px solid rgb(9, 132, 227); color: #74b9ff; padding: 4px 8px; border-radius: 6px; font-size: 0.8rem; font-family: monospace; font-weight: bold;">POST /analytics/export</span>
+                    </div>
+                    <p class="panel-desc">Danh sách các tín hiệu thô (Student Card Swipes, Fire Alarms) được B6 gửi trực tiếp sang cho Notification Service để phân loại và cảnh báo.</p>
+                    
+                    <!-- Danh sách tín hiệu nhận từ B6 -->
+                    <div class="signals-feed" id="inbound-signals-feed" style="max-height: 280px; overflow-y: auto; margin: 1rem 0; padding: 0.5rem; border-radius: 8px; background: rgba(255, 255, 255, 0.03); border: 1px solid rgba(255, 255, 255, 0.05);">
+                        <div class="empty-logs" style="padding: 2rem 0; text-align: center;">
+                            <i class="fa-solid fa-satellite-dish" style="font-size: 2rem; opacity: 0.3; margin-bottom: 0.5rem; display: block;"></i>
+                            <p style="opacity: 0.5; font-size: 0.9rem;">Chưa nhận được tín hiệu nào từ B6. Bấm nút giả lập bên dưới để demo nhanh!</p>
+                        </div>
+                    </div>
+
+                    <!-- Simulator for testing -->
+                    <div class="simulator-card" style="margin-top: 1.5rem; padding: 1rem; border-radius: 8px; background: rgba(255, 255, 255, 0.03); border: 1px solid rgba(255, 255, 255, 0.05);">
+                        <h3 style="font-family: 'Outfit', sans-serif; font-size: 1rem; font-weight: 600; margin-bottom: 0.5rem; color: #fff;">
+                            <i class="fa-solid fa-microchip" style="color: #a0a0ff; margin-right: 0.5rem;"></i> Trình Mô Phỏng B6
+                        </h3>
+                        <p style="font-size: 0.85rem; opacity: 0.7; margin-bottom: 1rem; line-height: 1.4;">
+                            Bấm nút dưới đây để giả lập sự kiện Core Business (B6) tự động bắn một gói tin JSON log sang cho hệ thống (bao gồm 1 quẹt thẻ hợp lệ, 1 quẹt thẻ bị từ chối, và 1 cảnh báo cháy).
+                        </p>
+                        <button type="button" class="btn-primary" id="btn-simulate-b6" style="width: 100%;">
+                            <i class="fa-solid fa-paper-plane"></i> Gửi Tín Hiệu Giả Lập từ B6 (B6 Log Export Call)
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Tab Content: Dynamic Configuration -->
+                <div id="tab-config" class="tab-content glass">
+                    <h2 class="panel-title">Thiết lập tham số các kênh kết nối</h2>
+                    <p class="panel-desc">Chuyển đổi giữa chế độ **Mock** (chạy thử nghiệm offline ghi log) và **Real** (gửi tin nhắn thực tế tới thiết bị nhận).</p>
+                    
+                    <form id="config-form" class="form-container">
+                        <!-- Global parameters -->
+                        <div class="config-section">
+                            <h3 class="section-title"><i class="fa-solid fa-gear"></i> Cấu hình chung</h3>
+                            <div class="form-row-3">
+                                <div class="form-group">
+                                    <label for="cfg-dedup-ttl">Deduplication TTL (Giây)</label>
+                                    <input type="number" id="cfg-dedup-ttl" name="DEDUPLICATION_TTL_SECONDS" required>
+                                </div>
+                                <div class="form-group">
+                                    <label for="cfg-retry-limit">Retry Limit (Lần)</label>
+                                    <input type="number" id="cfg-retry-limit" name="RETRY_MAX_LIMIT" required>
+                                </div>
+                                <div class="form-group">
+                                    <label for="cfg-retry-delay">Retry Delay (Giây)</label>
+                                    <input type="number" id="cfg-retry-delay" name="RETRY_DELAY_SECONDS" required>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Telegram config -->
+                        <div class="config-section">
+                            <div class="section-header">
+                                <h3 class="section-title"><i class="fa-brands fa-telegram text-blue"></i> Telegram Bot</h3>
+                                <label class="switch-container">
+                                    <input type="checkbox" id="cfg-mock-telegram" name="MOCK_TELEGRAM">
+                                    <span class="slider"></span>
+                                    <span class="switch-label">Mock Mode</span>
+                                </label>
+                            </div>
+                            <div class="form-row-2 config-fields-telegram">
+                                <div class="form-group">
+                                    <label>Telegram Bot Token</label>
+                                    <input type="password" id="cfg-tg-token" name="TELEGRAM_BOT_TOKEN" placeholder="Bot Token">
+                                </div>
+                                <div class="form-group">
+                                    <label>Chat ID nhận alert</label>
+                                    <input type="text" id="cfg-tg-chat" name="TELEGRAM_CHAT_ID" placeholder="Ví dụ: -10012345678">
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Discord config -->
+                        <div class="config-section">
+                            <div class="section-header">
+                                <h3 class="section-title"><i class="fa-brands fa-discord text-purple"></i> Discord Webhook</h3>
+                                <label class="switch-container">
+                                    <input type="checkbox" id="cfg-mock-discord" name="MOCK_DISCORD">
+                                    <span class="slider"></span>
+                                    <span class="switch-label">Mock Mode</span>
+                                </label>
+                            </div>
+                            <div class="form-group config-fields-discord">
+                                <label>Discord Webhook URL</label>
+                                <input type="password" id="cfg-discord-url" name="DISCORD_WEBHOOK_URL" placeholder="https://discord.com/api/webhooks/...">
+                            </div>
+                        </div>
+
+                        <!-- Email config -->
+                        <div class="config-section">
+                            <div class="section-header">
+                                <h3 class="section-title"><i class="fa-solid fa-envelope text-red"></i> SMTP Email</h3>
+                                <label class="switch-container">
+                                    <input type="checkbox" id="cfg-mock-email" name="MOCK_EMAIL">
+                                    <span class="slider"></span>
+                                    <span class="switch-label">Mock Mode</span>
+                                </label>
+                            </div>
+                            <div class="form-row-3 config-fields-email">
+                                <div class="form-group">
+                                    <label>SMTP Host</label>
+                                    <input type="text" id="cfg-smtp-host" name="SMTP_HOST" placeholder="smtp.gmail.com">
+                                </div>
+                                <div class="form-group">
+                                    <label>SMTP Port</label>
+                                    <input type="number" id="cfg-smtp-port" name="SMTP_PORT" placeholder="587">
+                                </div>
+                                <div class="form-group">
+                                    <label>Người gửi (Sender)</label>
+                                    <input type="email" id="cfg-smtp-sender" name="SMTP_SENDER" placeholder="username@gmail.com">
+                                </div>
+                            </div>
+                            <div class="form-row-3 config-fields-email">
+                                <div class="form-group">
+                                    <label>Username SMTP</label>
+                                    <input type="text" id="cfg-smtp-username" name="SMTP_USERNAME" placeholder="SMTP Username">
+                                </div>
+                                <div class="form-group">
+                                    <label>Mật khẩu ứng dụng (App Password)</label>
+                                    <input type="password" id="cfg-smtp-password" name="SMTP_PASSWORD" placeholder="SMTP Password">
+                                </div>
+                                <div class="form-group">
+                                    <label>Người nhận (Receiver)</label>
+                                    <input type="email" id="cfg-smtp-receiver" name="SMTP_RECEIVER" placeholder="receiver@gmail.com">
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Mock platforms -->
+                        <div class="config-section border-none">
+                            <h3 class="section-title"><i class="fa-solid fa-vial"></i> Mô phỏng các dịch vụ khác</h3>
+                            <div class="form-row-2">
+                                <label class="switch-container justify-start">
+                                    <input type="checkbox" id="cfg-mock-sms" name="MOCK_SMS" disabled checked>
+                                    <span class="slider disabled"></span>
+                                    <span class="switch-label">SMS Mock (Always Mock)</span>
+                                </label>
+                                <label class="switch-container justify-start">
+                                    <input type="checkbox" id="cfg-mock-zalo" name="MOCK_ZALO" disabled checked>
+                                    <span class="slider disabled"></span>
+                                    <span class="switch-label">Zalo Mock (Always Mock)</span>
+                                </label>
+                            </div>
+                        </div>
+
+                        <button type="submit" class="btn-primary">
+                            <i class="fa-solid fa-floppy-disk"></i> Lưu Cấu Hình (Save Configuration)
+                        </button>
+                    </form>
+                </div>
+            </div>
+
+            <!-- Right Panel: Real-time Ingested Logs -->
+            <div class="panel-right glass">
+                <div class="panel-right-header">
+                    <h2 class="panel-title"><i class="fa-solid fa-list-timeline"></i> Lịch sử & Trạng thái gửi Alerts</h2>
+                    <div class="log-actions">
+                        <button class="btn-icon" id="btn-refresh" title="Làm mới danh sách log">
+                            <i class="fa-solid fa-arrows-rotate"></i>
+                        </button>
+                    </div>
+                </div>
+                
+                <!-- Filters row -->
+                <div class="log-filters">
+                    <div class="search-box">
+                        <i class="fa-solid fa-magnifying-glass"></i>
+                        <input type="text" id="log-search" placeholder="Tìm kiếm Alert ID...">
+                    </div>
+                    <select id="filter-severity">
+                        <option value="">Mọi mức độ</option>
+                        <option value="HIGH">HIGH</option>
+                        <option value="MEDIUM">MEDIUM</option>
+                        <option value="LOW">LOW</option>
+                        <option value="CRITICAL">CRITICAL</option>
+                    </select>
+
+                    <select id="filter-channel">
+                        <option value="">Mọi kênh</option>
+                        <option value="telegram">Telegram</option>
+                        <option value="discord">Discord</option>
+                        <option value="email">Email</option>
+                        <option value="sms">SMS</option>
+                        <option value="zalo">Zalo</option>
+                    </select>
+                </div>
+
+                <!-- Log Entries List -->
+                <div class="logs-feed" id="logs-feed-container">
+                    <div class="empty-logs">
+                        <i class="fa-solid fa-square-poll-horizontal"></i>
+                        <p>Chưa có thông báo nào được tạo. Sử dụng form giả lập bên trái để gửi alert đầu tiên!</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <!-- Modal Xem Chi Tiết Log JSON -->
+    <div id="log-modal" class="modal">
+        <div class="modal-content glass">
+            <div class="modal-header">
+                <h3>Chi Tiết Giao Dịch Alert</h3>
+                <span class="close-modal">&times;</span>
+            </div>
+            <div class="modal-body">
+                <pre class="json-display"><code id="modal-json"></code></pre>
+            </div>
+        </div>
+    </div>
+
+    <!-- Toast Notification Container -->
+    <div id="toast-container"></div>
+
+    <footer class="footer">
+        <p>FIT4110 | Dịch vụ kết nối và công nghệ nền tảng © 2026 - Nhóm Xây Dựng Notification Service</p>
+    </footer>
+
+    <!-- Custom JS -->
+    <script src="/static/app.js"></script>
+</body>
+</html>

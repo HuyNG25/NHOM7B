@@ -1,0 +1,279 @@
+{
+	"info": {
+		"_postman_id": "893c52e4-984e-4f36-932d-3ebbf4020a6e",
+		"name": "Notification Service Testing Suite",
+		"description": "Bộ kiểm thử API chính thức khớp với OpenAPI Contract của Notification Service (FIT4110).",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+	},
+	"item": [
+		{
+			"name": "1. GET Health Check",
+			"event": [
+				{
+					"listen": "test",
+					"script": {
+						"exec": [
+							"pm.test(\"Status code is 200\", function () {",
+							"    pm.response.to.have.status(200);",
+							"});",
+							"pm.test(\"Health status is OK\", function () {",
+							"    const jsonData = pm.response.json();",
+							"    pm.expect(jsonData.status).to.eql(\"ok\");",
+							"    pm.expect(jsonData.service).to.eql(\"notification-service\");",
+							"});"
+						],
+						"type": "text/javascript"
+					}
+				}
+			],
+			"request": {
+				"method": "GET",
+				"header": [],
+				"url": {
+					"raw": "{{base_url}}/health",
+					"host": [
+						"{{base_url}}"
+					],
+					"path": [
+						"health"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "2. Send Alert with Token (Expect 202)",
+			"event": [
+				{
+					"listen": "prerequest",
+					"script": {
+						"exec": [
+							"pm.environment.set(\"test_alert_id_2\", \"0196fb3d-\" + Math.floor(Math.random() * 1000000));"
+						],
+						"type": "text/javascript"
+					}
+				},
+				{
+					"listen": "test",
+					"script": {
+						"exec": [
+							"pm.test(\"Status code is 202\", function () {",
+							"    pm.response.to.have.status(202);",
+							"});",
+							"pm.test(\"Alert is accepted\", function () {",
+							"    const jsonData = pm.response.json();",
+							"    pm.expect(jsonData.sent).to.eql(true);",
+							"    pm.expect(jsonData.status).to.eql(\"delivered\");",
+							"    pm.expect(jsonData).to.have.property(\"ticket_id\");",
+							"});"
+						],
+						"type": "text/javascript"
+					}
+				}
+			],
+			"request": {
+				"method": "POST",
+				"header": [
+					{
+						"key": "Content-Type",
+						"value": "application/json",
+						"type": "text"
+					},
+					{
+						"key": "Authorization",
+						"value": "Bearer mock-jwt-token-for-postman",
+						"type": "text"
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n  \"alert_id\": \"{{test_alert_id_2}}\",\n  \"severity\": \"HIGH\",\n  \"message\": \"Phát hiện truy cập trái phép tại cổng chính\",\n  \"target\": \"security_team\",\n  \"channels\": [\"sms\"]\n}"
+				},
+				"url": {
+					"raw": "{{base_url}}/notifications/trigger",
+					"host": [
+						"{{base_url}}"
+					],
+					"path": [
+						"notifications",
+						"trigger"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "3. Verify Idempotency Deduplication",
+			"event": [
+				{
+					"listen": "prerequest",
+					"script": {
+						"exec": [
+							"// Tạo ngẫu nhiên một Idempotency-Key và Alert ID cho testcase",
+							"pm.environment.set(\"test_idem_key\", \"idem-key-\" + Math.floor(Math.random() * 100000));",
+							"pm.environment.set(\"test_alert_id\", \"0196fb3d-\" + Math.floor(Math.random() * 100000));"
+						],
+						"type": "text/javascript"
+					}
+				},
+				{
+					"listen": "test",
+					"script": {
+						"exec": [
+							"pm.test(\"First request accepted with 202\", function () {",
+							"    pm.response.to.have.status(202);",
+							"    const firstRes = pm.response.json();",
+							"    pm.environment.set(\"cached_ticket_id\", firstRes.ticket_id);",
+							"});",
+							"",
+							"// Gọi lại lần 2 ngay lập tức với cùng Idempotency-Key",
+							"const url = pm.environment.get(\"base_url\") + \"/notifications/trigger\";",
+							"const payload = {",
+							"    alert_id: pm.environment.get(\"test_alert_id\"),",
+							"    severity: \"HIGH\",",
+							"    message: \"Phát hiện truy cập trái phép lần 2\",",
+							"    target: \"security_team\",",
+							"    channels: [\"sms\"]",
+							"};",
+							"",
+							"pm.sendRequest({",
+							"    url: url,",
+							"    method: 'POST',",
+							"    header: { ",
+							"        'Content-Type': 'application/json',",
+							"        'Authorization': 'Bearer mock-jwt-token-for-postman',",
+							"        'Idempotency-Key': pm.environment.get(\"test_idem_key\")",
+							"    },",
+							"    body: { mode: 'raw', raw: JSON.stringify(payload) }",
+							"}, function (err, res) {",
+							"    pm.test(\"Second request returns identical cached response\", function () {",
+							"        pm.expect(res.code).to.eql(202);",
+							"        pm.expect(res.json().ticket_id).to.eql(pm.environment.get(\"cached_ticket_id\"));",
+							"    });",
+							"});"
+						],
+						"type": "text/javascript"
+					}
+				}
+			],
+			"request": {
+				"method": "POST",
+				"header": [
+					{
+						"key": "Content-Type",
+						"value": "application/json",
+						"type": "text"
+					},
+					{
+						"key": "Authorization",
+						"value": "Bearer mock-jwt-token-for-postman",
+						"type": "text"
+					},
+					{
+						"key": "Idempotency-Key",
+						"value": "{{test_idem_key}}",
+						"type": "text"
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n  \"alert_id\": \"{{test_alert_id}}\",\n  \"severity\": \"HIGH\",\n  \"message\": \"Phát hiện truy cập trái phép lần 1\",\n  \"target\": \"security_team\",\n  \"channels\": [\"sms\"]\n}"
+				},
+				"url": {
+					"raw": "{{base_url}}/notifications/trigger",
+					"host": [
+						"{{base_url}}"
+					],
+					"path": [
+						"notifications",
+						"trigger"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "4. GET Notification Logs with Token",
+			"event": [
+				{
+					"listen": "test",
+					"script": {
+						"exec": [
+							"pm.test(\"Logs retrieved successfully\", function () {",
+							"    pm.response.to.have.status(200);",
+							"    const jsonData = pm.response.json();",
+							"    pm.expect(jsonData).to.have.property('items');",
+							"    pm.expect(jsonData.items).to.be.an('array');",
+							"    if (jsonData.items.length > 0) {",
+							"        const firstLog = jsonData.items[0];",
+							"        pm.expect(firstLog).to.have.property('ticket_id');",
+							"        pm.expect(firstLog).to.have.property('alert_id');",
+							"        pm.expect(firstLog).to.have.property('channel');",
+							"        pm.expect(firstLog).to.not.have.property('message'); // Kiểm tra strict additionalProperties: false",
+							"        pm.expect(firstLog).to.not.have.property('severity');",
+							"    }",
+							"});"
+						],
+						"type": "text/javascript"
+					}
+				}
+			],
+			"request": {
+				"method": "GET",
+				"header": [
+					{
+						"key": "Authorization",
+						"value": "Bearer mock-jwt-token-for-postman",
+						"type": "text"
+					}
+				],
+				"url": {
+					"raw": "{{base_url}}/notifications/logs",
+					"host": [
+						"{{base_url}}"
+					],
+					"path": [
+						"notifications",
+						"logs"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "5. Test Unauthorized (Expect 401)",
+			"event": [
+				{
+					"listen": "test",
+					"script": {
+						"exec": [
+							"pm.test(\"Expect 401 Unauthorized\", function () {",
+							"    pm.response.to.have.status(401);",
+							"    const jsonData = pm.response.json();",
+							"    pm.expect(jsonData).to.have.property('status', 401);",
+							"    pm.expect(jsonData).to.have.property('title');",
+							"    pm.expect(jsonData).to.have.property('type');",
+							"});"
+						],
+						"type": "text/javascript"
+					}
+				}
+			],
+			"request": {
+				"method": "GET",
+				"header": [],
+				"url": {
+					"raw": "{{base_url}}/notifications/logs",
+					"host": [
+						"{{base_url}}"
+					],
+					"path": [
+						"notifications",
+						"logs"
+					]
+				}
+			},
+			"response": []
+		}
+	]
+}

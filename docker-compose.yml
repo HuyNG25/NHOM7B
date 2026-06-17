@@ -1,0 +1,39 @@
+# docker-compose.yml — Notification Service (B7)
+
+services:
+  notification-service:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: notification_service_app
+    ports:
+      - "8086:8086"
+
+    volumes:
+      # Mount thư mục evidence/logs ra máy host để dễ dàng kiểm tra lịch sử gửi alert
+      - ./evidence/logs:/app/evidence/logs
+
+    env_file:
+      - .env
+
+    restart: always
+
+    # ============================================================
+    # NETWORK — Kết nối với các service khác trong hệ thống
+    # ============================================================
+    # Khi chạy chung mạng với service khác (B6, Analytics, Gateway):
+    #   Option A (Cùng Docker host): thêm service B6/Analytics vào đây
+    #   Option B (Khác host/VPS): chỉ cần điền IP đúng trong .env
+    # Hiện tại dùng host network để có thể kết nối tới IP nội bộ của LAN
+    networks:
+      - campus_network
+
+networks:
+  campus_network:
+    # Khi các nhóm khác cũng dùng docker-compose:
+    #   - Nếu cùng máy: dùng driver: bridge (mặc định)
+    #   - Nếu khác máy/VPS: điền IP thực vào .env, không cần sửa file này
+    driver: bridge
+    # Uncomment dòng dưới nếu muốn join network của nhóm khác đã tạo trước:
+    # external: true
+    # name: <tên_network_của_nhóm_khác>

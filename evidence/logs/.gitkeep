@@ -1,0 +1,2 @@
+# Thư mục lưu trữ tệp tin log của Notification Service (notification_service.log)
+# Tệp tin log sẽ được sinh ra khi khởi động và gửi alert.
