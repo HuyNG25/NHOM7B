@@ -73,83 +73,104 @@ config_service = ConfigurationService()
 
 class NotificationEngine:
     def __init__(self):
-        # Cache lưu trữ các eventId nhận được để chống trùng lặp. Cấu trúc: {eventId: timestamp}
-        self.event_id_cache: Dict[str, float] = {}
-        # Cache lưu trữ Idempotency-Key. Cấu trúc: {idempotency_key: {"timestamp": float, "response": Dict}}
-        self.idempotency_cache: Dict[str, Dict[str, Any]] = {}
-        # Bộ lưu trữ logs tạm thời trong memory để UI dễ dàng truy vấn
-        self.logs_db: List[Dict[str, Any]] = []
-        # Bộ lưu trữ tín hiệu inbound nhận từ B6
-        self.inbound_signals_db: List[Dict[str, Any]] = []
+        pass
+
+    @property
+    def logs_db(self) -> List[Dict[str, Any]]:
+        from src.utils.database import db_manager
+        query = "SELECT * FROM notification_logs ORDER BY timestamp DESC LIMIT 100"
+        rows = db_manager.execute_read(query)
+        for r in rows:
+            r["sent"] = r["status"] in ["delivered", "partial"]
+        return rows
+
+    @property
+    def inbound_signals_db(self) -> List[Dict[str, Any]]:
+        from src.utils.database import db_manager
+        query = "SELECT * FROM inbound_signals ORDER BY timestamp DESC LIMIT 100"
+        rows = db_manager.execute_read(query)
+        for r in rows:
+            if isinstance(r["details"], str):
+                try:
+                    r["details"] = json.loads(r["details"])
+                except Exception:
+                    pass
+        return rows
 
     def record_inbound_signal(self, log_type: str, timestamp: str, details: Dict[str, Any], status: str, reason: str) -> None:
         """
-        Lưu vết các tín hiệu gửi từ B6 qua endpoint /analytics/export để hiển thị trên UI.
+        Lưu vết các tín hiệu gửi từ B6 qua endpoint /analytics/export vào PostgreSQL.
         """
-        self.inbound_signals_db.insert(0, {
-            "log_type": log_type,
-            "timestamp": timestamp,
-            "details": details,
-            "status": status,
-            "reason": reason
-        })
-        if len(self.inbound_signals_db) > 100:
-            self.inbound_signals_db.pop()
+        from src.utils.database import db_manager
+        query = """
+            INSERT INTO inbound_signals (log_type, timestamp, details, status, reason)
+            VALUES (%s, %s, %s, %s, %s)
+        """
+        db_manager.execute_write(query, (log_type, timestamp, json.dumps(details), status, reason))
 
     def check_event_id_duplication(self, event_id: str) -> Tuple[bool, str]:
         """
-        Kiểm tra trùng lặp eventId.
-        Trả về: (hợp_lệ, lý_do)
+        Kiểm tra trùng lặp eventId từ PostgreSQL.
         """
-        current_time = time.time()
-        ttl = config_service.config["DEDUPLICATION_TTL_SECONDS"]
-
-        # Dọn dẹp cache cũ
-        expired = [eid for eid, ts in self.event_id_cache.items() if current_time - ts > ttl]
-        for eid in expired:
-            del self.event_id_cache[eid]
-
-        if event_id in self.event_id_cache:
-            time_passed = current_time - self.event_id_cache[event_id]
-            return False, f"Duplicate event ID detected. Received {int(time_passed)}s ago (TTL: {ttl}s)."
-
-        # Lưu vào cache
-        self.event_id_cache[event_id] = current_time
-        return True, "Unique event"
-
-    def check_idempotency(self, idempotency_key: str) -> Tuple[bool, Any]:
-        """
-        Kiểm tra trùng lặp khóa Idempotency-Key.
-        Trả về: (chưa_tồn_tại, response_đã_xử_lý_trước_đó)
-        """
+        from src.utils.database import db_manager
         current_time = time.time()
         ttl = config_service.config["DEDUPLICATION_TTL_SECONDS"]
 
         # Dọn dẹp cache quá hạn
-        expired = [k for k, v in self.idempotency_cache.items() if current_time - v["timestamp"] > ttl]
-        for k in expired:
-            del self.idempotency_cache[k]
+        cleanup_query = "DELETE FROM event_dedup_cache WHERE %s - received_at > %s"
+        db_manager.execute_write(cleanup_query, (current_time, ttl))
 
-        if idempotency_key in self.idempotency_cache:
-            return False, self.idempotency_cache[idempotency_key]["response"]
+        # Kiểm tra trùng lặp
+        query = "SELECT received_at FROM event_dedup_cache WHERE event_id = %s"
+        rows = db_manager.execute_read(query, (event_id,))
+        if rows:
+            time_passed = current_time - rows[0]["received_at"]
+            return False, f"Duplicate event ID detected. Received {int(time_passed)}s ago (TTL: {ttl}s)."
+
+        # Lưu mới
+        insert_query = "INSERT INTO event_dedup_cache (event_id, received_at) VALUES (%s, %s) ON CONFLICT (event_id) DO NOTHING"
+        db_manager.execute_write(insert_query, (event_id, current_time))
+        return True, "Unique event"
+
+    def check_idempotency(self, idempotency_key: str) -> Tuple[bool, Any]:
+        """
+        Kiểm tra trùng lặp khóa Idempotency-Key từ PostgreSQL.
+        """
+        from src.utils.database import db_manager
+        current_time = time.time()
+        ttl = config_service.config["DEDUPLICATION_TTL_SECONDS"]
+
+        # Dọn dẹp quá hạn
+        cleanup_query = "DELETE FROM idempotency_cache WHERE %s - created_at > %s"
+        db_manager.execute_write(cleanup_query, (current_time, ttl))
+
+        # Kiểm tra tồn tại
+        query = "SELECT response_data FROM idempotency_cache WHERE idempotency_key = %s"
+        rows = db_manager.execute_read(query, (idempotency_key,))
+        if rows:
+            return False, rows[0]["response_data"]
 
         return True, None
 
     def register_idempotency(self, idempotency_key: str, response: Any) -> None:
         """
-        Đăng ký kết quả xử lý của một Idempotency-Key.
+        Đăng ký kết quả xử lý của một Idempotency-Key vào PostgreSQL.
         """
-        self.idempotency_cache[idempotency_key] = {
-            "timestamp": time.time(),
-            "response": response
-        }
+        from src.utils.database import db_manager
+        query = """
+            INSERT INTO idempotency_cache (idempotency_key, response_data, created_at)
+            VALUES (%s, %s, %s)
+            ON CONFLICT (idempotency_key) DO UPDATE SET response_data = EXCLUDED.response_data, created_at = EXCLUDED.created_at
+        """
+        db_manager.execute_write(query, (idempotency_key, json.dumps(response), time.time()))
 
     def record_log(self, event_id: str, alert_id: str, severity: str, message: str, 
                    channel: str, sent: bool, status: str, error_msg: str = "", 
                    retry_count: int = 0, ticket_id: str = None) -> Dict[str, Any]:
         """
-        Ghi log trạng thái gửi thông báo (vào console, file và memory để Dashboard load).
+        Ghi log trạng thái gửi thông báo vào CSDL PostgreSQL, console và file.
         """
+        from src.utils.database import db_manager
         # Định dạng thời gian theo chuẩn ISO 8601 UTC
         iso_timestamp = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
         t_id = ticket_id or str(uuid.uuid4())
@@ -168,10 +189,16 @@ class NotificationEngine:
             "sent": sent
         }
 
-        # Lưu vào memory log db
-        self.logs_db.insert(0, log_entry)  # Đưa lên đầu để hiển thị mới nhất trước
-        if len(self.logs_db) > 100:  # Giới hạn lưu 100 logs gần nhất trong memory
-            self.logs_db.pop()
+        # Lưu vào PostgreSQL
+        query = """
+            INSERT INTO notification_logs (ticket_id, event_id, alert_id, channel, status, retry_count, error_message, timestamp, severity, message)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            ON CONFLICT (ticket_id) DO NOTHING
+        """
+        db_manager.execute_write(query, (
+            t_id, event_id, alert_id, channel, status, retry_count, 
+            error_msg if error_msg else None, iso_timestamp, severity, message
+        ))
 
         # Ghi log bằng logger hệ thống (file & console)
         app_logger.info(json.dumps(log_entry))

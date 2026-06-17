@@ -27,6 +27,12 @@ app = FastAPI(
     version="1.0.0"
 )
 
+@app.on_event("startup")
+def startup_event():
+    from src.utils.database import db_manager
+    db_manager.initialize_pool()
+
+
 # Exception Handler cho lỗi xác thực Bearer/Logic nghiệp vụ (Problem Details JSON)
 @app.exception_handler(ProblemException)
 async def problem_exception_handler(request: Request, exc: ProblemException):
