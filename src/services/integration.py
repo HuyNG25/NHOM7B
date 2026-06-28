@@ -59,23 +59,25 @@ def call_b6_callback(
         "success" — gọi thật thành công
         "failed"  — gọi thật thất bại
     """
-    b6_url_base = os.getenv("B6_BASE_URL", "")
+    b6_url = os.getenv("WEBHOOK_URL", "")
+    if not b6_url:
+        b6_url_base = os.getenv("B6_BASE_URL", "")
+        b6_url = f"{b6_url_base.rstrip('/')}/alerts"
+
     mock_flag = _is_mocked("MOCK_B6_CALLBACK")
 
     # Tự động mock nếu URL là placeholder
-    if mock_flag or _is_placeholder(b6_url_base):
+    if mock_flag or _is_placeholder(b6_url):
         app_logger.info(json.dumps({
             "event": "b6_callback_mocked",
-            "reason": "MOCK_B6_CALLBACK=true hoặc B6_BASE_URL chưa cấu hình",
+            "reason": "MOCK_B6_CALLBACK=true hoặc WEBHOOK_URL/B6_BASE_URL chưa cấu hình",
             "event_id": event_id,
             "ticket_id": ticket_id,
             "status": status,
             "channels": channels_dispatched,
-            "note": "Khi có IP thật: đặt B6_BASE_URL và MOCK_B6_CALLBACK=false trong .env"
+            "note": "Khi có IP thật: đặt WEBHOOK_URL/B6_BASE_URL và MOCK_B6_CALLBACK=false trong .env"
         }))
         return "mocked"
-
-    b6_url = f"{b6_url_base.rstrip('/')}/alerts"
     payload = {
         "eventId": event_id,
         "ticket_id": ticket_id,
@@ -123,6 +125,40 @@ def push_log_to_analytics(log_entry: Dict[str, Any]) -> str:
         service_name="Analytics Service",
         url=analytics_url,
         payload=log_entry,
+        timeout=4,
+        retries=1
+    )
+
+
+# ============================================================
+# Mobile App (B5) — Push Alert
+# ============================================================
+def push_alert_to_b5(alert_payload: Dict[str, Any]) -> str:
+    """
+    Đẩy cảnh báo đã lọc (real-time) sang B5 (Mobile App).
+
+    Returns:
+        "mocked"  — khi MOCK_B5=true hoặc URL chưa cấu hình
+        "success" — đẩy thành công
+        "failed"  — đẩy thất bại
+    """
+    b5_url_base = os.getenv("B5_BASE_URL", "")
+    mock_flag = _is_mocked("MOCK_B5")
+
+    if mock_flag or _is_placeholder(b5_url_base):
+        app_logger.info(json.dumps({
+            "event": "b5_push_mocked",
+            "reason": "MOCK_B5=true hoặc B5_BASE_URL chưa cấu hình",
+            "alert_event_id": alert_payload.get("event_id"),
+            "note": "Khi có IP thật: đặt B5_BASE_URL và MOCK_B5=false trong .env"
+        }))
+        return "mocked"
+
+    b5_url = f"{b5_url_base.rstrip('/')}/api/v1/alerts/receive"
+    return _http_post(
+        service_name="Mobile App B5",
+        url=b5_url,
+        payload=alert_payload,
         timeout=4,
         retries=1
     )

@@ -15,7 +15,7 @@ Tài liệu ghi nhận lịch sử các phiên bản phát triển của hệ th
 - Cấu trúc lại các endpoint phù hợp 100% với hợp đồng API chính thức (OpenAPI 3.1.0) của nhóm B7.
 - Định tuyến `/notifications/trigger` thay thế `/api/v1/alerts`.
 - Định tuyến `/notifications/logs` trả về log bọc trong wrapper `items`.
-- Cấu hình cổng chạy mặc định sang **`8085`** để giải quyết xung đột tài nguyên local.
+- Cấu hình cổng chạy mặc định sang **`8000`** để giải quyết xung đột tài nguyên local.
 
 ---
 

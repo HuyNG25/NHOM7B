@@ -54,6 +54,18 @@ class TriggerAcceptedResponse(BaseModel):
     status: str = Field(..., example="delivered")
     ticket_id: str = Field(..., example="0196fb3e-5ba2-7e2f-8a11-6d7249e3cade")
 
+# ============================================================
+# B6 Contract Models — Nhận yêu cầu từ B6 (Hợp đồng OpenAPI mới)
+# ============================================================
+
+class NotifyRequest(BaseModel):
+    title: str = Field(..., description="Tiêu đề của loại cảnh báo.", example="Cảnh báo AI Vision")
+    level: str = Field(..., description="Mức độ nghiêm trọng (INFO, WARNING, HIGH, CRITICAL)", example="CRITICAL")
+    message: str = Field(..., description="Nội dung chi tiết của cảnh báo", example="Hệ thống phát hiện rủi ro CRITICAL tại Camera CAM-001!")
+
+class NotifyResponse(BaseModel):
+    status: str = Field(..., example="success")
+    message: str = Field(..., example="Notification triggered successfully")
 
 # ============================================================
 # Analytics Export Models — Hứng dữ liệu inbound từ B6

@@ -15,7 +15,7 @@ import urllib.request
 import json
 import sys
 
-BASE_URL = "http://localhost:8086"
+BASE_URL = "http://localhost:8000"
 
 # ============================================================
 # Payload chuẩn B6 → B7 (theo contract B6 to B5 Analytics Log Export)

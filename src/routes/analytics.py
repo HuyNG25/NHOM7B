@@ -27,6 +27,7 @@ from src.models.alert import (
     AnalyticsExportItemResult,
 )
 from src.services.notification import notification_engine, config_service
+from src.services import integration as integration_svc
 from src.utils.logger import app_logger
 
 router = APIRouter(
@@ -210,6 +211,15 @@ async def receive_analytics_export(
                 reason=f"Trùng lặp — bỏ qua: {dup_reason}",
             ))
             continue
+
+        # --- Push Real-time Alert sang B5 ---
+        integration_svc.push_alert_to_b5({
+            "event_id": event_id,
+            "timestamp": item.timestamp,
+            "severity": severity,
+            "message": message,
+            "source": "notification-service-b7"
+        })
 
         # --- Xác định kênh gửi ---
         target_channels = []

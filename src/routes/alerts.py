@@ -1,12 +1,15 @@
-from fastapi import APIRouter, HTTPException, Query, Header, Request, Depends, status
-from typing import List, Optional, Dict, Any
+from fastapi import APIRouter, HTTPException, Query, Header, Request, Depends, status, BackgroundTasks
+from fastapi.responses import StreamingResponse
+from typing import List, Optional, Dict, Any, AsyncGenerator
+import asyncio
+import json
 import time
 import uuid
-from src.services.notification import notification_engine, config_service
+from src.services.notification import notification_engine, config_service, event_bus
 from src.services import integration as integration_svc
 from src.models.alert import (
     HealthStatus, AlertEventPayload, EventAcceptedResponse, NotificationLogItem,
-    AlertTriggerPayload, TriggerAcceptedResponse
+    AlertTriggerPayload, TriggerAcceptedResponse, NotifyRequest, NotifyResponse
 )
 
 router = APIRouter(tags=["Notification Service APIs"])
@@ -127,6 +130,15 @@ def receive_alert_event(
             instance=request.url.path
         )
 
+    # --- Push Real-time Alert sang B5 ---
+    integration_svc.push_alert_to_b5({
+        "event_id": alert.eventId,
+        "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        "severity": alert.data.severity,
+        "message": alert.data.message,
+        "source": "notification-service-b7"
+    })
+
     # Xác định các kênh gửi tin
     target_channels = alert.data.channels
     if not target_channels:
@@ -235,6 +247,15 @@ def handle_trigger_alert(
             detail=event_reason,
             instance=request.url.path
         )
+
+    # --- Push Real-time Alert sang B5 ---
+    integration_svc.push_alert_to_b5({
+        "event_id": alert.alert_id,
+        "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        "severity": alert.severity,
+        "message": alert.message,
+        "source": "notification-service-b7"
+    })
 
     # Xác định các kênh gửi tin
     target_channels = alert.channels
@@ -379,3 +400,102 @@ def get_dashboard_logs(limit: int = 50):
     Endpoint nội bộ trả về toàn bộ trường log để Dashboard hiển thị giao diện đẹp mắt.
     """
     return notification_engine.logs_db[:limit]
+
+
+# ============================================================
+# B6 OpenAPI Contract Endpoint
+# ============================================================
+@router.post("/notify/send", response_model=NotifyResponse)
+def b6_notify_send(request: Request, payload: NotifyRequest, background_tasks: BackgroundTasks):
+    """
+    Endpoint chuẩn theo hợp đồng API do B6 cung cấp.
+    Kích hoạt cảnh báo hệ thống từ AI Vision hoặc IoT.
+    Sử dụng BackgroundTasks để return ngay lập tức, không làm B6 bị timeout.
+    """
+    # Phân tích cú pháp payload để xác định log_type cho Inbound Signal (cột trái Dashboard)
+    msg_lower = payload.message.lower()
+    log_type = "B7_NOTIFICATION_API"
+    
+    if "uid" in msg_lower or "thẻ lạ" in msg_lower or "thẻ lậu" in msg_lower or "chưa đăng ký" in msg_lower:
+        log_type = "B3_ACCESS_GATE"
+    elif "hỏa hoạn" in msg_lower or "nhiệt độ" in msg_lower or "khói" in msg_lower:
+        log_type = "B1_IOT_SENSOR"
+    elif "thiết bị lạ" in msg_lower or "xâm nhập" in msg_lower or "unknown" in msg_lower:
+        log_type = "B1_IOT_SENSOR"
+    elif "ai vision" in msg_lower or "camera" in msg_lower or "vũ khí" in msg_lower:
+        log_type = "B4_AI_VISION"
+        
+    iso_time = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+    
+    # Ghi nhận Inbound Signal để đẩy qua SSE cho UI (Cột Tín Hiệu từ B6)
+    from src.services.notification import notification_engine
+    notification_engine.record_inbound_signal(
+        log_type=log_type,
+        timestamp=iso_time,
+        details={
+            "title": payload.title,
+            "message": payload.message,
+            "level": payload.level
+        },
+        status="triggered",
+        reason=f"Nhận qua API /notify/send"
+    )
+
+    alert_id = str(uuid.uuid4())
+    alert = AlertTriggerPayload(
+        alert_id=alert_id,
+        severity=payload.level,
+        message=f"[{payload.title}] {payload.message}",
+        target="b6_integration",
+        channels=None # Sẽ lấy mặc định theo cấu hình hệ thống B7
+    )
+    
+    try:
+        # Chạy ẩn quá trình gửi mail/telegram/zalo và webhook callback
+        # để nhả luồng HTTP request lại cho B6 ngay lập tức.
+        background_tasks.add_task(handle_trigger_alert, request, alert, idempotency_key=None)
+        return {"status": "success", "message": "Notification triggered successfully"}
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# 5. GET /events/stream — Server-Sent Events (SSE) real-time stream
+@router.get("/events/stream", include_in_schema=False)
+async def sse_stream(request: Request):
+    """
+    Endpoint SSE: giữ kết nối HTTP mở và push ngay mỗi khi:
+    - B6 gửi alert mới vào POST /notifications/events  -> event type: notification_log
+    - B6 gửi inbound signal vào POST /analytics/export -> event type: inbound_signal
+    Dashboard lắng nghe endpoint này bằng EventSource để hiển thị real-time.
+    """
+    q = event_bus.subscribe()
+
+    async def event_generator() -> AsyncGenerator[str, None]:
+        # Gửi heartbeat ngay khi kết nối để xác nhận
+        yield "event: connected\ndata: {\"message\": \"SSE stream connected\"}\n\n"
+        try:
+            while True:
+                try:
+                    # Chờ tối đa 15 giây, nếu không có sự kiện gửi keepalive
+                    raw = await asyncio.wait_for(q.get(), timeout=15.0)
+                    payload = json.loads(raw)
+                    event_type = payload.get("type", "message")
+                    data = json.dumps(payload.get("data", {}))
+                    yield f"event: {event_type}\ndata: {data}\n\n"
+                except asyncio.TimeoutError:
+                    # Keepalive ping để giữ kết nối không bị timeout bởi proxy/browser
+                    yield ": keepalive\n\n"
+        finally:
+            event_bus.unsubscribe(q)
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+            "Connection": "keep-alive",
+        }
+    )

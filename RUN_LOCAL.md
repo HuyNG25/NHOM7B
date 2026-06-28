@@ -53,10 +53,10 @@ Khi server khởi chạy thành công, màn hình sẽ hiển thị:
 INFO:     Started server process [XXXX]
 INFO:     Waiting for application startup.
 INFO:     Application startup complete.
-INFO:     Uvicorn running on http://0.0.0.0:8086 (Press CTRL+C to quit)
+INFO:     Uvicorn running on http://0.0.0.0:8000 (Press CTRL+C to quit)
 ```
 
 ### 6. Truy cập Dashboard kiểm thử
 Mở trình duyệt và truy cập:
-* **Dashboard chính**: [http://127.0.0.1:8086](http://127.0.0.1:8086)
-* **API Swagger UI**: [http://127.0.0.1:8086/docs](http://127.0.0.1:8086/docs)
+* **Dashboard chính**: [http://127.0.0.1:8000](http://127.0.0.1:8000)
+* **API Swagger UI**: [http://127.0.0.1:8000/docs](http://127.0.0.1:8000/docs)

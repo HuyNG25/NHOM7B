@@ -11,7 +11,7 @@ import io
 # Fix encoding trên Windows (PowerShell dùng cp1252)
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
 
-BASE = "http://localhost:8086"
+BASE = "http://localhost:8000"
 TOKEN = "Bearer mock-jwt-token-for-fit4110"
 results = []
 

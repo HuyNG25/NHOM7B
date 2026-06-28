@@ -23,8 +23,8 @@ COPY .env.example ./
 # Tạo thư mục cho logs
 RUN mkdir -p evidence/logs
 
-# Mở cổng 8086 để truy cập bên ngoài
-EXPOSE 8086
+# Mở cổng 8000 để truy cập bên ngoài
+EXPOSE 8000
 
 
 # Lệnh khởi chạy FastAPI server

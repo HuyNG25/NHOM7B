@@ -11,7 +11,7 @@
     <!-- FontAwesome for Icons -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <!-- Custom CSS -->
-    <link rel="stylesheet" href="/static/style.css">
+    <link rel="stylesheet" href="/static/style.css?v=3">
 </head>
 <body>
     <div class="bg-glow"></div>
@@ -23,9 +23,15 @@
                 <i class="fa-solid fa-bell-ring logo-icon text-glow"></i>
                 <span class="logo-text">Notify<span class="accent-text">Service</span></span>
             </div>
-            <div class="system-status">
-                <span class="status-indicator online"></span>
-                <span class="status-label">Service Online</span>
+            <div style="display: flex; align-items: center; gap: 12px;">
+                <button id="btn-toggle-sound" class="btn-sound" title="Bật/Tắt âm thanh báo động">
+                    <i class="fa-solid fa-volume-high" id="sound-icon"></i>
+                    <span id="sound-status">Âm thanh: Bật</span>
+                </button>
+                <div class="system-status">
+                    <span class="status-indicator online"></span>
+                    <span class="status-label">Service Online</span>
+                </div>
             </div>
         </div>
     </header>
@@ -85,30 +91,19 @@
                 <div id="tab-trigger" class="tab-content active glass">
                     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
                         <h2 class="panel-title" style="margin-bottom: 0;">Tín hiệu nhận từ Core Business (B6)</h2>
-                        <span class="endpoint-badge" style="background: rgba(9, 132, 227, 0.2); border: 1px solid rgb(9, 132, 227); color: #74b9ff; padding: 4px 8px; border-radius: 6px; font-size: 0.8rem; font-family: monospace; font-weight: bold;">POST /analytics/export</span>
+                        <span class="endpoint-badge">POST /analytics/export</span>
                     </div>
                     <p class="panel-desc">Danh sách các tín hiệu thô (Student Card Swipes, Fire Alarms) được B6 gửi trực tiếp sang cho Notification Service để phân loại và cảnh báo.</p>
                     
                     <!-- Danh sách tín hiệu nhận từ B6 -->
-                    <div class="signals-feed" id="inbound-signals-feed" style="max-height: 280px; overflow-y: auto; margin: 1rem 0; padding: 0.5rem; border-radius: 8px; background: rgba(255, 255, 255, 0.03); border: 1px solid rgba(255, 255, 255, 0.05);">
+                    <div class="signals-feed" id="inbound-signals-feed">
                         <div class="empty-logs" style="padding: 2rem 0; text-align: center;">
-                            <i class="fa-solid fa-satellite-dish" style="font-size: 2rem; opacity: 0.3; margin-bottom: 0.5rem; display: block;"></i>
-                            <p style="opacity: 0.5; font-size: 0.9rem;">Chưa nhận được tín hiệu nào từ B6. Bấm nút giả lập bên dưới để demo nhanh!</p>
+                            <i class="fa-solid fa-satellite-dish" style="font-size: 2rem; opacity: 0.2; margin-bottom: 0.5rem; display: block; color: var(--text-muted)"></i>
+                            <p style="opacity: 0.8; font-size: 0.9rem; color: var(--text-muted)">Chưa nhận được tín hiệu nào từ B6. Bấm nút giả lập bên dưới để demo nhanh!</p>
                         </div>
                     </div>
 
-                    <!-- Simulator for testing -->
-                    <div class="simulator-card" style="margin-top: 1.5rem; padding: 1rem; border-radius: 8px; background: rgba(255, 255, 255, 0.03); border: 1px solid rgba(255, 255, 255, 0.05);">
-                        <h3 style="font-family: 'Outfit', sans-serif; font-size: 1rem; font-weight: 600; margin-bottom: 0.5rem; color: #fff;">
-                            <i class="fa-solid fa-microchip" style="color: #a0a0ff; margin-right: 0.5rem;"></i> Trình Mô Phỏng B6
-                        </h3>
-                        <p style="font-size: 0.85rem; opacity: 0.7; margin-bottom: 1rem; line-height: 1.4;">
-                            Bấm nút dưới đây để giả lập sự kiện Core Business (B6) tự động bắn một gói tin JSON log sang cho hệ thống (bao gồm 1 quẹt thẻ hợp lệ, 1 quẹt thẻ bị từ chối, và 1 cảnh báo cháy).
-                        </p>
-                        <button type="button" class="btn-primary" id="btn-simulate-b6" style="width: 100%;">
-                            <i class="fa-solid fa-paper-plane"></i> Gửi Tín Hiệu Giả Lập từ B6 (B6 Log Export Call)
-                        </button>
-                    </div>
+
                 </div>
 
                 <!-- Tab Content: Dynamic Configuration -->
@@ -273,11 +268,22 @@
                     </select>
                 </div>
 
-                <!-- Log Entries List -->
-                <div class="logs-feed" id="logs-feed-container">
-                    <div class="empty-logs">
-                        <i class="fa-solid fa-square-poll-horizontal"></i>
-                        <p>Chưa có thông báo nào được tạo. Sử dụng form giả lập bên trái để gửi alert đầu tiên!</p>
+                <!-- Panel Right Body: Split Layout -->
+                <div class="panel-right-body">
+                    <!-- Log Entries List -->
+                    <div class="logs-feed" id="logs-feed-container">
+                        <div class="empty-logs">
+                            <i class="fa-solid fa-square-poll-horizontal"></i>
+                            <p>Chưa có thông báo nào được tạo. Sử dụng form giả lập bên trái để gửi alert đầu tiên!</p>
+                        </div>
+                    </div>
+                    
+                    <!-- Detail View Panel -->
+                    <div class="log-detail-view" id="log-detail-container">
+                        <div class="empty-detail">
+                            <i class="fa-solid fa-circle-info"></i>
+                            <p>Chọn một bản ghi nhật ký bên trái để xem chi tiết gửi tin và dữ liệu thô (JSON).</p>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -305,6 +311,6 @@
     </footer>
 
     <!-- Custom JS -->
-    <script src="/static/app.js"></script>
+    <script src="/static/app.js?v=2"></script>
 </body>
 </html>

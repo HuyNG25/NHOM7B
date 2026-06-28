@@ -3,12 +3,65 @@ import time
 import json
 import smtplib
 import uuid
+import asyncio
 from email.mime.text import MIMEText
 from email.header import Header
 import requests
 from typing import Dict, List, Tuple, Any, Optional
 from src.utils.logger import app_logger
 from src.services import integration as integration_svc
+
+# ============================================================
+# EventBus — Pub/Sub queue để push dữ liệu real-time qua SSE
+# ============================================================
+class EventBus:
+    """
+    Quản lý danh sách subscriber (asyncio.Queue) đang lắng nghe.
+    Được cập nhật để đảm bảo Thread-safe (khi gọi từ BackgroundTasks).
+    """
+    def __init__(self):
+        self._subscribers: List[asyncio.Queue] = []
+        self._loop = None
+
+    def subscribe(self) -> asyncio.Queue:
+        """Client SSE mới kết nối — trả về queue riêng của họ."""
+        if self._loop is None:
+            self._loop = asyncio.get_running_loop()
+        q: asyncio.Queue = asyncio.Queue(maxsize=100)
+        self._subscribers.append(q)
+        return q
+
+    def unsubscribe(self, q: asyncio.Queue) -> None:
+        """Client SSE ngắt kết nối — xoá khỏi danh sách."""
+        try:
+            self._subscribers.remove(q)
+        except ValueError:
+            pass
+
+    def publish(self, event_type: str, data: Dict[str, Any]) -> None:
+        """
+        Gửi sự kiện tới tất cả subscriber đang hoạt động.
+        Sử dụng call_soon_threadsafe để tránh lỗi asyncio từ BackgroundTasks thread.
+        """
+        payload = json.dumps({"type": event_type, "data": data})
+        
+        def _do_publish():
+            dead = []
+            for q in self._subscribers:
+                try:
+                    q.put_nowait(payload)
+                except asyncio.QueueFull:
+                    dead.append(q)
+            for q in dead:
+                self.unsubscribe(q)
+                
+        if self._loop and self._loop.is_running():
+            self._loop.call_soon_threadsafe(_do_publish)
+        else:
+            _do_publish()
+
+# Instance toàn cục — dùng chung giữa routes và services
+event_bus = EventBus()
 
 # Cấu hình mặc định từ .env
 DEFAULT_CONFIG = {
@@ -33,6 +86,14 @@ DEFAULT_CONFIG = {
     "SMTP_PASSWORD": os.getenv("SMTP_PASSWORD", ""),
     "SMTP_SENDER": os.getenv("SMTP_SENDER", ""),
     "SMTP_RECEIVER": os.getenv("SMTP_RECEIVER", ""),
+
+    "TWILIO_ACCOUNT_SID": os.getenv("TWILIO_ACCOUNT_SID", ""),
+    "TWILIO_AUTH_TOKEN": os.getenv("TWILIO_AUTH_TOKEN", ""),
+    "TWILIO_FROM_NUMBER": os.getenv("TWILIO_FROM_NUMBER", ""),
+    "SMS_RECEIVER_NUMBER": os.getenv("SMS_RECEIVER_NUMBER", ""),
+
+    "ZALO_OA_TOKEN": os.getenv("ZALO_OA_TOKEN", ""),
+    "ZALO_RECEIVER_ID": os.getenv("ZALO_RECEIVER_ID", ""),
 
     # Core Business (B6) Callback settings
     "B6_BASE_URL": os.getenv("B6_BASE_URL", ""),
@@ -100,6 +161,7 @@ class NotificationEngine:
     def record_inbound_signal(self, log_type: str, timestamp: str, details: Dict[str, Any], status: str, reason: str) -> None:
         """
         Lưu vết các tín hiệu gửi từ B6 qua endpoint /analytics/export vào PostgreSQL.
+        Đồng thời publish sự kiện SSE để Dashboard hiển thị real-time.
         """
         from src.utils.database import db_manager
         query = """
@@ -107,6 +169,15 @@ class NotificationEngine:
             VALUES (%s, %s, %s, %s, %s)
         """
         db_manager.execute_write(query, (log_type, timestamp, json.dumps(details), status, reason))
+
+        # Publish real-time event tới tất cả SSE client
+        event_bus.publish("inbound_signal", {
+            "log_type": log_type,
+            "timestamp": timestamp,
+            "details": details,
+            "status": status,
+            "reason": reason
+        })
 
     def check_event_id_duplication(self, event_id: str) -> Tuple[bool, str]:
         """
@@ -206,6 +277,9 @@ class NotificationEngine:
         # Đẩy log sang Analytics Service (nếu đã cấu hình)
         integration_svc.push_log_to_analytics(log_entry)
 
+        # Publish real-time event tới tất cả SSE client trên Dashboard
+        event_bus.publish("notification_log", log_entry)
+
         return log_entry
 
     def send_notification(self, event_id: str, alert_id: str, severity: str, message: str, 
@@ -245,8 +319,18 @@ class NotificationEngine:
                         conf["SMTP_SENDER"], conf["SMTP_RECEIVER"],
                         event_id, alert_id, severity, message, target_user_id
                     )
+                elif channel == "sms":
+                    self._dispatch_sms(
+                        conf["TWILIO_ACCOUNT_SID"], conf["TWILIO_AUTH_TOKEN"], 
+                        conf["TWILIO_FROM_NUMBER"], conf["SMS_RECEIVER_NUMBER"],
+                        event_id, alert_id, severity, message, target_user_id
+                    )
+                elif channel == "zalo":
+                    self._dispatch_zalo(
+                        conf["ZALO_OA_TOKEN"], conf["ZALO_RECEIVER_ID"],
+                        event_id, alert_id, severity, message, target_user_id
+                    )
                 else:
-                    # Các kênh SMS, Zalo thật chưa code đầy đủ API thì coi như fail nếu không mock
                     raise ValueError(f"Real connection for channel '{channel}' is not implemented.")
 
                 # Thành công
@@ -375,6 +459,65 @@ class NotificationEngine:
         server.login(username, password)
         server.sendmail(sender, [receiver], msg.as_string())
         server.quit()
+
+    def _dispatch_sms(self, account_sid: str, auth_token: str, from_number: str, receiver_number: str, event_id: str, alert_id: str, severity: str, message: str, target_user_id: Optional[str]):
+        if not account_sid or not auth_token or not from_number or not receiver_number:
+            raise ValueError("Twilio SMS credentials or receiver number is missing.")
+        
+        url = f"https://api.twilio.com/2010-04-01/Accounts/{account_sid}/Messages.json"
+        auth = (account_sid, auth_token)
+        
+        body = (
+            f"ALERT ({severity.upper()})\n"
+            f"Alert ID: {alert_id}\n"
+            f"Target: {target_user_id or 'N/A'}\n"
+            f"Msg: {message}"
+        )
+        
+        payload = {
+            "From": from_number,
+            "To": receiver_number,
+            "Body": body
+        }
+        
+        response = requests.post(url, data=payload, auth=auth, timeout=8)
+        if response.status_code not in [200, 201]:
+            raise RuntimeError(f"Twilio API returned status {response.status_code}: {response.text}")
+
+    def _dispatch_zalo(self, oa_token: str, receiver_id: str, event_id: str, alert_id: str, severity: str, message: str, target_user_id: Optional[str]):
+        if not oa_token or not receiver_id:
+            raise ValueError("Zalo OA Token or Receiver ID is missing.")
+            
+        url = "https://openapi.zalo.me/v3.0/oa/message/cs"
+        headers = {
+            "access_token": oa_token,
+            "Content-Type": "application/json"
+        }
+        
+        text_msg = (
+            f"🚨 Báo động ({severity.upper()})\n"
+            f"Mã cảnh báo: {alert_id}\n"
+            f"Người nhận: {target_user_id or 'N/A'}\n"
+            f"Thời gian: {time.strftime('%Y-%m-%d %H:%M:%S')}\n"
+            f"---\n{message}"
+        )
+        
+        payload = {
+            "recipient": {
+                "user_id": receiver_id
+            },
+            "message": {
+                "text": text_msg
+            }
+        }
+        
+        response = requests.post(url, json=payload, headers=headers, timeout=8)
+        if response.status_code != 200:
+            raise RuntimeError(f"Zalo API returned status {response.status_code}: {response.text}")
+            
+        data = response.json()
+        if data.get("error") != 0:
+            raise RuntimeError(f"Zalo API Error: {data.get('message')}")
 
 # Instance toàn cục điều khiển toàn bộ logic thông báo
 notification_engine = NotificationEngine()

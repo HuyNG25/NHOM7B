@@ -19,7 +19,7 @@ info:
     email: group7.notification@example.edu.vn
 
 servers:
-  - url: http://localhost:8085
+  - url: http://localhost:8000
     description: Notification Service (B7) — chạy thực tế
   - url: http://localhost:4070
     description: Prism mock server cho Nhóm B7

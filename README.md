@@ -45,7 +45,7 @@ pip install -r requirements.txt
 # 3. Khởi chạy server FastAPI
 python src/main.py
 ```
-Sau đó truy cập Dashboard tại: [http://localhost:8086](http://localhost:8086)
+Sau đó truy cập Dashboard tại: [http://localhost:8000](http://localhost:8000)
 
 ## 6. Cách Chạy Bằng Docker
 Notification Service được đóng gói sẵn Docker để dễ dàng triển khai.
@@ -63,7 +63,7 @@ Notification Service được đóng gói sẵn Docker để dễ dàng triển 
    ```bash
    docker compose up --build -d
    ```
-4. Truy cập giao diện kiểm thử của container tại địa chỉ: [http://localhost:8086](http://localhost:8086).
+4. Truy cập giao diện kiểm thử của container tại địa chỉ: [http://localhost:8000](http://localhost:8000).
 5. Để dừng dịch vụ, chạy lệnh:
    ```bash
    docker compose down
@@ -92,7 +92,7 @@ Notification Service được đóng gói sẵn Docker để dễ dàng triển 
 ## 9. Hướng Dẫn Chạy Test (Postman)
 Thư mục `tests/` chứa file Postman Collection giúp giảng viên và các nhóm khác có thể chạy kiểm thử tự động.
 
-1. Khởi chạy Notification Service (Local hoặc Docker) ở cổng `8086`.
+1. Khởi chạy Notification Service (Local hoặc Docker) ở cổng `8000`.
 2. Mở ứng dụng Postman.
 3. Import file Collection [postman_collection.json](tests/postman_collection.json) và Environment [environment_local.json](tests/environment_local.json) từ thư mục `tests/`.
 4. Chọn môi trường `Local Environment` trong Postman.

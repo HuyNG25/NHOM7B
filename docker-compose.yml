@@ -27,7 +27,7 @@ services:
       dockerfile: Dockerfile
     container_name: notification_service_app
     ports:
-      - "8086:8086"
+      - "8000:8000"
 
     volumes:
       # Mount thư mục evidence/logs ra máy host để dễ dàng kiểm tra lịch sử gửi alert

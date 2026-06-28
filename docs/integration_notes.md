@@ -10,7 +10,7 @@ Core Business là nơi phát hiện các bất thường (ví dụ: phát hiện
 
 ### Cách thức tích hợp:
 * **Giao thức**: HTTP POST.
-* **Endpoint**: `http://<notification-service-ip>:8085/api/v1/alerts` (Hoặc qua URL của API Gateway).
+* **Endpoint**: `http://<notification-service-ip>:8000/api/v1/alerts` (Hoặc qua URL của API Gateway).
 * **Payload cấu trúc đề nghị**:
 ```json
 {
@@ -38,7 +38,7 @@ Analytics Service cần thu thập toàn bộ log trạng thái gửi tin để 
 
 #### Phương án A: Tích hợp qua API (Pull Mode)
 Analytics Service định kỳ (ví dụ: mỗi 5 phút) gọi API:
-* **Endpoint**: `GET http://<notification-service-ip>:8085/api/v1/alerts/logs`
+* **Endpoint**: `GET http://<notification-service-ip>:8000/api/v1/alerts/logs`
 * **Query Params**: Có thể lọc theo thời gian hoặc số lượng bằng `limit` (tối đa 100 log/request).
 
 #### Phương án B: Đọc trực tiếp File Log (Shared Volume / Log Shipper) - KHUYẾN NGHỊ
@@ -55,5 +55,5 @@ Việc parse log file sẽ tránh làm ảnh hưởng hiệu năng xử lý HTTP
 
 Nếu hệ thống sử dụng một API Gateway chung (ví dụ: Kong, Nginx, Ocelot) để định tuyến yêu cầu từ bên ngoài:
 
-* Cấu hình định tuyến tất cả các request có tiền tố `/api/v1/alerts` và `/api/v1/channels` chuyển tiếp đến địa chỉ IP nội bộ của container Notification Service ở cổng `8085`.
+* Cấu hình định tuyến tất cả các request có tiền tố `/api/v1/alerts` và `/api/v1/channels` chuyển tiếp đến địa chỉ IP nội bộ của container Notification Service ở cổng `8000`.
 * Cho phép cors header nếu các service front-end khác muốn gọi API trực tiếp.
