@@ -18,9 +18,9 @@ Notification Service đóng vai trò là một dịch vụ trung gian chuyên bi
 ## 3. Thành Viên Nhóm
 | Họ và Tên | Mã số sinh viên | Vai trò đóng góp |
 | :--- | :--- | :--- |
-| [Nguyễn Văn A] | [SV123456] | Thiết kế Kiến trúc Backend & Tích hợp Kênh |
-| [Trần Thị B] | [SV654321] | Xây dựng Dashboard Quản trị & CSS Styles |
-| [Lê Hoàng C] | [SV789012] | Đóng gói Docker, Postman Tests & Viết Tài liệu |
+| Nguyễn Đình Huy] | [1771020357] | Thiết kế Kiến trúc Backend & Tích hợp Kênh |
+| [Vũ Việt Long] | [SV654321] | Xây dựng Dashboard Quản trị & CSS Styles |
+| [Nguyễn Phạm Hồng Lâm] | [SV789012] | Đóng gói Docker, Postman Tests & Viết Tài liệu |
 
 ## 4. Công Nghệ Sử Dụng
 * **Mã nguồn**: Python 3.10+
